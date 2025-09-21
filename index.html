@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Match 3 Solver</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+    }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(7, 50px);
+      grid-gap: 8px;
+      justify-content: center;
+      margin-top: 20px;
+    }
+    .tile {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      border: 2px solid #ccc;
+      cursor: pointer;
+      position: relative;
+    }
+    .highlight {
+      border: 4px solid gold;
+    }
+    .percent {
+      position: absolute;
+      bottom: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Match 3 Solver Assistant</h1>
+  <p>Click tiles to cycle colors. Predictions start when 2 of a color are set.</p>
+  <div id="board"></div>
+  <p id="status">Loading boards database…</p>
+
+  <script>
+    // -------------------
+    // CONFIG
+    // -------------------
+    const COLORS = ["Blue", "Green", "Red", "Purple", "Yellow", "Orange", "Black"];
+    const COLOR_MAP = {
+      "Blue": "#3498db",
+      "Green": "#2ecc71",
+      "Red": "#e74c3c",
+      "Purple": "#9b59b6",
+      "Yellow": "#f1c40f",
+      "Orange": "#e67e22",
+      "Black": "#2c3e50",
+      "": "white"
+    };
+
+    const COPIES_EACH = 3;
+    const BOARD_SIZE = COLORS.length * COPIES_EACH;
+
+    let ALL_BOARDS = [];
+    let currentBoard = Array(BOARD_SIZE).fill(""); // user selections
+
+    // -------------------
+    // LOAD DATABASE
+    // -------------------
+    async function loadBoards() {
+      const response = await fetch("boards.json");
+      const boards = await response.json();
+      ALL_BOARDS = boards;
+      document.getElementById("status").textContent =
+        `Loaded ${boards.length.toLocaleString()} boards.`;
+    }
+
+    // -------------------
+    // SETUP UI
+    // -------------------
+    function setupBoard() {
+      const boardDiv = document.getElementById("board");
+      boardDiv.innerHTML = "";
+      for (let i = 0; i < BOARD_SIZE; i++) {
+        const tile = document.createElement("div");
+        tile.className = "tile";
+        tile.dataset.index = i;
+        updateTile(tile, "");
+        tile.addEventListener("click", () => cycleTile(i));
+        boardDiv.appendChild(tile);
+      }
+    }
+
+    function updateTile(tile, color) {
+      tile.style.background = COLOR_MAP[color];
+      tile.style.border = color ? `2px solid ${COLOR_MAP[color]}` : "2px solid #ccc";
+      let percentLabel = tile.querySelector(".percent");
+      if (percentLabel) percentLabel.remove();
+    }
+
+    function cycleTile(index) {
+      const current = currentBoard[index];
+      const next = current === "" ? COLORS[0] :
+                   COLORS[(COLORS.indexOf(current) + 1) % COLORS.length] || "";
+      currentBoard[index] = next;
+      const tile = document.querySelector(`.tile[data-index='${index}']`);
+      updateTile(tile, next);
+      runSolver();
+    }
+
+    // -------------------
+    // SOLVER
+    // -------------------
+    function runSolver() {
+      if (!ALL_BOARDS.length) return; // not loaded yet
+
+      // Step 1: filter database
+      let candidates = ALL_BOARDS.filter(board =>
+        currentBoard.every((val, idx) => val === "" || board[idx] === val)
+      );
+
+      // Step 2: check for colors with exactly 2 revealed
+      let counts = {};
+      currentBoard.forEach(c => { if (c) counts[c] = (counts[c] || 0) + 1; });
+
+      Object.keys(counts).forEach(color => {
+        if (counts[color] === 2) {
+          let possibilities = new Map(); // index -> count
+          candidates.forEach(board => {
+            board.forEach((tileColor, idx) => {
+              if (tileColor === color && currentBoard[idx] === "") {
+                possibilities.set(idx, (possibilities.get(idx) || 0) + 1);
+              }
+            });
+          });
+
+          // Step 3: decorate predictions
+          let total = Array.from(possibilities.values()).reduce((a,b) => a+b, 0);
+          possibilities.forEach((count, idx) => {
+            const tile = document.querySelector(`.tile[data-index='${idx}']`);
+            tile.style.border = `3px solid ${COLOR_MAP[color]}`;
+            let percent = Math.round((count / total) * 100);
+            if (percent < 100) {
+              let label = document.createElement("div");
+              label.className = "percent";
+              label.textContent = percent + "%";
+              tile.appendChild(label);
+            }
+          });
+        }
+      });
+
+      document.getElementById("status").textContent =
+        `Remaining candidates: ${candidates.length.toLocaleString()}`;
+    }
+
+    // -------------------
+    // INIT
+    // -------------------
+    setupBoard();
+    loadBoards();
+  </script>
+</body>
+</html>
